@@ -7,19 +7,19 @@ from langchain_groq import ChatGroq
 # Initialize Streamlit Page UI Configuration
 st.set_page_config(page_title="Zero-Hallucination AI", page_icon="🛡️", layout="wide")
 st.title("🛡️ Zero-Hallucination Cloud Research Chatbot")
-st.caption("Powered by Streamlit, Direct DDGS Search, and Free Models via Groq Cloud")
+st.caption("Powered by Streamlit, Direct DDGS Search, and Free Production Models via Groq Cloud")
 
 # Securely check for the required API key in Streamlit Secrets
 if "GROQ_API_KEY" not in st.secrets:
-    st.error("🔑 Missing GROQ_API_KEY! Please add it to your Streamlit Cloud app secrets.")
+    st.error("🔑 Missing GROQ_API_KEY! Please add it to your Streamlit Cloud app secrets as GROQ_API_KEY = \"your_key\"")
     st.stop()
 
-# Initialize Free Cloud LLM (Using standard Llama 3 on Groq infrastructure)
+# Initialize Free Cloud LLM (Using standard Llama 3.3 on Groq infrastructure)
 @st.cache_resource
 def load_llm():
     return ChatGroq(
-        model="llama3-8b-8192", 
-        temperature=0.0, 
+        model="llama-3.3-70b-versatile",  # High-reasoning production model id
+        temperature=0.0,                  # Forced to 0.0 to actively block creative assumptions
         groq_api_key=st.secrets["GROQ_API_KEY"]
     )
 
@@ -75,7 +75,7 @@ if user_input := st.chat_input("Ask me anything that requires real-time research
         - Every factual statement must explicitly map to a theme found in the context provided.
         """
         
-        # ChatGroq uses .invoke() identically to Ollama
+        # Run initial processing step
         initial_draft_response = llm.invoke(researcher_prompt)
         initial_draft = initial_draft_response.content
         
