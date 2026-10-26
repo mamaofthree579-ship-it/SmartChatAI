@@ -1,21 +1,29 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_community.llms import Ollama
+from ddgs import DDGS
+from langchain_groq import ChatGroq
 
 # Initialize Streamlit Page UI Configuration
 st.set_page_config(page_title="Zero-Hallucination AI", page_icon="🛡️", layout="wide")
-st.title("🛡️ Zero-Hallucination Local Research Chatbot")
-st.caption("Powered by Streamlit, DuckDuckGo Search, and Local Free Models via Ollama")
+st.title("🛡️ Zero-Hallucination Cloud Research Chatbot")
+st.caption("Powered by Streamlit, Direct DDGS Search, and Free Models via Groq Cloud")
 
-# Initialize Local LLM (Change "llama3" to "mistral" or "phi3" if preferred)
+# Securely check for the required API key in Streamlit Secrets
+if "GROQ_API_KEY" not in st.secrets:
+    st.error("🔑 Missing GROQ_API_KEY! Please add it to your Streamlit Cloud app secrets.")
+    st.stop()
+
+# Initialize Free Cloud LLM (Using standard Llama 3 on Groq infrastructure)
 @st.cache_resource
 def load_llm():
-    return Ollama(model="llama3", temperature=0.0)  # Low temperature drops creativity & cuts hallucinations
+    return ChatGroq(
+        model="llama3-8b-8192", 
+        temperature=0.0, 
+        groq_api_key=st.secrets["GROQ_API_KEY"]
+    )
 
 llm = load_llm()
-ddg_search = DuckDuckGoSearchRun()
 
 # Initialize Chat Memory State
 if "messages" not in st.session_state:
@@ -37,13 +45,17 @@ if user_input := st.chat_input("Ask me anything that requires real-time research
     with st.chat_message("assistant"):
         status_box = st.status("🕵️ Agent Core: Initializing research...", expanded=True)
         
-        # --- STEP 1: LIVE SEARCH & CRAWL ---
+        # --- STEP 1: LIVE SEARCH VIA DIRECT DDGS ---
         status_box.write("🌐 Gathering web intelligence via DuckDuckGo...")
         try:
-            raw_search_results = ddg_search.run(user_input)
+            search_raw = DDGS().text(user_input, max_results=5)
+            raw_search_results = "\n\n".join([f"Source: {res.get('href')}\nContent: {res.get('body')}" for res in search_raw if "body" in res])
+            
+            if not raw_search_results:
+                raw_search_results = "No explicit matching text found on the live web."
         except Exception as e:
-            raw_search_results = "Failed to fetch web results due to rate limits."
-            status_box.write("⚠️ Search failed. Relying on baseline system checks.")
+            raw_search_results = "Failed to fetch web results due to connectivity limits."
+            status_box.write(f"⚠️ Search skipped: {str(e)}")
 
         # --- STEP 2: DRAFT GENERATION (THE PRODUCER AGENT) ---
         status_box.write("✍️ Drafting initial response based exclusively on sources...")
@@ -63,7 +75,9 @@ if user_input := st.chat_input("Ask me anything that requires real-time research
         - Every factual statement must explicitly map to a theme found in the context provided.
         """
         
-        initial_draft = llm.invoke(researcher_prompt)
+        # ChatGroq uses .invoke() identically to Ollama
+        initial_draft_response = llm.invoke(researcher_prompt)
+        initial_draft = initial_draft_response.content
         
         # --- STEP 3: LOGICAL AUDITING (THE CRITIC AGENT) ---
         status_box.write("🔍 Auditor Agent: Scanning draft for unverified claims...")
@@ -86,7 +100,8 @@ if user_input := st.chat_input("Ask me anything that requires real-time research
         Final Sanitized Output:
         """
         
-        sanitized_response = llm.invoke(critic_prompt)
+        sanitized_response_obj = llm.invoke(critic_prompt)
+        sanitized_response = sanitized_response_obj.content
         
         # Clean up UI element statuses upon completion
         status_box.update(label="✅ Research complete & verified!", state="complete", expanded=False)
