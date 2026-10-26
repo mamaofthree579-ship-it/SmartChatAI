@@ -14,16 +14,20 @@ if "GROQ_API_KEY" not in st.secrets:
     st.error("🔑 Missing GROQ_API_KEY! Please add it to your Streamlit Cloud app secrets as GROQ_API_KEY = \"your_key\"")
     st.stop()
 
-# Initialize Free Cloud LLM (Using standard Llama 3.3 on Groq infrastructure)
+# Initialize Free Cloud LLM using Groq's verified production string identifier
 @st.cache_resource
 def load_llm():
     return ChatGroq(
-        model="llama-3.3-70b-versatile",  # High-reasoning production model id
+        model="llama-3.3-70b-versatile",  # High-reasoning production model identifier
         temperature=0.0,                  # Forced to 0.0 to actively block creative assumptions
         groq_api_key=st.secrets["GROQ_API_KEY"]
     )
 
-llm = load_llm()
+try:
+    llm = load_llm()
+except Exception as e:
+    st.error(f"Failed to initialize LLM configuration instance: {str(e)}")
+    st.stop()
 
 # Initialize Chat Memory State
 if "messages" not in st.session_state:
@@ -51,8 +55,8 @@ if user_input := st.chat_input("Ask me anything that requires real-time research
             search_raw = DDGS().text(user_input, max_results=5)
             raw_search_results = "\n\n".join([f"Source: {res.get('href')}\nContent: {res.get('body')}" for res in search_raw if "body" in res])
             
-            if not raw_search_results:
-                raw_search_results = "No explicit matching text found on the live web."
+            if not raw_search_results or len(raw_search_results.strip()) < 10:
+                raw_search_results = "No explicit matching text found on the live web records right now."
         except Exception as e:
             raw_search_results = "Failed to fetch web results due to connectivity limits."
             status_box.write(f"⚠️ Search skipped: {str(e)}")
