@@ -14,11 +14,11 @@ if "GROQ_API_KEY" not in st.secrets:
     st.error("🔑 Missing GROQ_API_KEY! Please add it to your Streamlit Cloud app secrets as GROQ_API_KEY = \"your_key\"")
     st.stop()
 
-# Initialize Free Cloud LLM using Groq's verified production string identifier
+# Initialize Free Cloud LLM using Groq's active production string identifier
 @st.cache_resource
 def load_llm():
     return ChatGroq(
-        model="llama-3.1-8b-instant",     # Verified active stable production identifier
+        model="openai/gpt-oss-120b",      # Production-active flagship reasoning model
         temperature=0.0,                  # Forced to 0.0 to actively block creative assumptions
         groq_api_key=st.secrets["GROQ_API_KEY"]
     )
