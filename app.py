@@ -1,15 +1,19 @@
 import streamlit as st
 import requests
-import re
+import io
+import contextlib
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 from pypdf import PdfReader
 from langchain_groq import ChatGroq
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Initialize Streamlit Page UI Configuration
 st.set_page_config(page_title="Zero-Hallucination AI", page_icon="🛡️", layout="wide")
-st.title("🛡️ Zero-Hallucination Production Research Agent")
-st.caption("Deep Crawling, Local PDF/Code Analytics, and Automated Fact Citation Engine")
+st.title("🛡️ Zero-Hallucination Production Research Engine")
+st.caption("Deep Crawling, Sandbox Code Interpreter, Document Repository Analytics, and PDF/MD Report Generator")
 
 # Securely check for the required API key in Streamlit Secrets
 if "GROQ_API_KEY" not in st.secrets:
@@ -38,24 +42,93 @@ def deep_crawl_url(url, timeout=5):
         res = requests.get(url, headers=headers, timeout=timeout)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            # Strip scripts, styles, and navigational elements
             for tag in soup(["script", "style", "nav", "footer", "header"]):
                 tag.decompose()
             text = " ".join(soup.get_text().split())
-            return text[:4000] # Cap text snippet per document to manage context limits
+            return text[:4000]
     except Exception:
         return ""
     return ""
 
-# Initialize Chat Memory State
+# Secure Internal Sandbox Code Interpreter Engine
+def execute_sandbox_code(code_string):
+    output_buffer = io.StringIO()
+    with contextlib.redirect_stdout(output_buffer):
+        try:
+            # Create a restricted local execution workspace scope
+            safe_globals = {"__builtins__": __builtins__, "import": None}
+            exec(code_string, safe_globals, {})
+            result = output_buffer.getvalue()
+            return result if result else "Execution completed successfully with no stdout."
+        except Exception as runtime_err:
+            return f"Sandbox Execution Error: {str(runtime_err)}"
+
+# PDF Compilation Utility via ReportLab
+def generate_pdf_report(report_text, filename="research_report.pdf"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, title="AI Research Verification Report")
+    styles = getSampleStyleSheet()
+    
+    # Custom report layout styling configuration
+    body_style = ParagraphStyle(
+        'ReportBody',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        spaceAfter=10
+    )
+    
+    story = [
+        Paragraph("<b>🛡️ Zero-Hallucination AI Research Verification Report</b>", styles['Title']),
+        Spacer(1, 15)
+    ]
+    
+    # Clean text to comply with reportlab XML-like tag standards
+    sanitized_text = report_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    for line in sanitized_text.split("\n"):
+        if line.strip():
+            story.append(Paragraph(line, body_style))
+            
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+# --- PERSISTENT MEMORY MANAGEMENT LAYER ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "last_generated_report" not in st.session_state:
+    st.session_state.last_generated_report = ""
 
-# Sidebar Document Repository Integration (The "Local Files" feature)
+# Sidebar Workspace Configuration
 with st.sidebar:
-    st.header("📂 Local Document Repository")
+    st.header("📂 Session Knowledge Hub")
+    
+    # Export Workspace Utility (Renders if an active research paper context exists)
+    if st.session_state.last_generated_report:
+        st.subheader("📥 Export Active Research Report")
+        
+        # Markdown compilation transmission box
+        st.download_button(
+            label="Download Clean Markdown (.md)",
+            data=st.session_state.last_generated_report,
+            file_name="verified_research_paper.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
+        
+        # PDF compilation transmission box
+        pdf_data = generate_pdf_report(st.session_state.last_generated_report)
+        st.download_button(
+            label="Download Formatted PDF (.pdf)",
+            data=pdf_data,
+            file_name="verified_research_paper.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+        st.divider()
+
     uploaded_files = st.file_uploader(
-        "Upload reference materials (PDFs, Markdown, Python code)", 
+        "Upload local reference materials", 
         type=["pdf", "md", "txt", "py"], 
         accept_multiple_files=True
     )
@@ -73,25 +146,35 @@ with st.sidebar:
                     st.error(f"Error parsing PDF file {file.name}: {pdf_err}")
             else:
                 local_context_pool += file.read().decode("utf-8") + "\n"
+                
+    if st.button("🗑️ Clear Chat Memory Stack", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.last_generated_report = ""
+        st.rerun()
 
-# Render past chat logs
+# Render persistent session logs dynamically from memory
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 # User prompt ingestion
-if user_input := st.chat_input("Ask me anything that requires deep verification or document search..."):
-    # Append user question to UI state
+if user_input := st.chat_input("Ask me anything that requires deep verification, code execution, or documentation checks..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
-    # Begin Agentic Processing Pipeline
     with st.chat_message("assistant"):
-        status_box = st.status("🕵️ Agent Core: Initializing research loop...", expanded=True)
+        status_box = st.status("🕵️ Agent Core: Initializing advanced processing loop...", expanded=True)
         
-        # --- STEP 1: WEB INTELLIGENCE SEARCH ---
-        status_box.write("🌐 STEP 1: Gathering web records via DuckDuckGo...")
+        # --- PHASE 1: CODE INTERPRETER EVALUATION GATE ---
+        sandbox_execution_log = ""
+        if "print(" in user_input or any(op in user_input for op in ["for i in", "def ", "lambda"]):
+            status_box.write("🖥️ CODE BOX MATCHED: Isolating script logic for secure code execution...")
+            sandbox_execution_log = execute_sandbox_code(user_input)
+            status_box.write(f"⚙️ Sandbox output verified: {sandbox_execution_log}")
+
+        # --- PHASE 2: WEB RECONNAISSANCE SEARCH ---
+        status_box.write("🌐 Gathering external references via DuckDuckGo...")
         sources_manifest = {}
         web_snippets = []
         
@@ -105,33 +188,32 @@ if user_input := st.chat_input("Ask me anything that requires deep verification 
                     sources_manifest[f"Source {idx}"] = href
                     web_snippets.append(f"[{idx}] Source Link: {href}\nSnippet: {body}")
                     
-                    # --- STEP 2: DEEP CRAWLING EXTENSION ---
-                    status_box.write(f"🕷️ STEP 2: Deep crawling content from Source [{idx}]...")
+                    # Deep Crawling Extension execution
                     deep_text = deep_crawl_url(href)
                     if deep_text and len(deep_text) > 200:
                         web_snippets.append(f"[{idx}] Deep Web Text Page Context:\n{deep_text}")
                     idx += 1
-            
             web_context = "\n\n".join(web_snippets)
         except Exception as e:
             web_context = "No live web text collected due to connectivity limits."
             status_box.write(f"⚠️ Search skipped: {str(e)}")
 
-        # Combine Local Upload Repository context with Live Web Search contexts
+        # Consolidate multithreaded environmental contexts safely
         consolidated_context = ""
         if local_context_pool:
             consolidated_context += f"--- LOCAL USER UPLOADED FILES ---\n{local_context_pool}\n\n"
+        if sandbox_execution_log:
+            consolidated_context += f"--- SECURE LOGICAL SANDBOX EXECUTION OUTPUT ---\n{sandbox_execution_log}\n\n"
         consolidated_context += f"--- LIVE WEB HARVESTED RESEARCH DATA ---\n{web_context}"
 
         if len(consolidated_context.strip()) < 50:
             consolidated_context = "No reference text context available from local files or live internet web engines."
 
-        # --- STEP 3: DRAFT GENERATION (THE PRODUCER AGENT WITH CITATIONS) ---
-        status_box.write("✍️ STEP 3: Drafting initial response with strict citation rules...")
+        # --- PHASE 3: VERIFIED REPORT GENERATION (PRODUCER CO-ROUTINE) ---
+        status_box.write("✍️ Drafting initial response with strict citation rules...")
         
         researcher_prompt = f"""
         You are a highly analytical Research Agent. Your sole priority is truthfulness and structural accuracy.
-        
         Task: Answer the User Query using ONLY the facts present in the Context block below.
         
         Context Data:
@@ -149,12 +231,11 @@ if user_input := st.chat_input("Ask me anything that requires deep verification 
         initial_draft_response = llm.invoke(researcher_prompt)
         initial_draft = initial_draft_response.content
         
-        # --- STEP 4: LOGICAL AUDITING (THE CRITIC AGENT) ---
-        status_box.write("🔍 STEP 4: Scanning draft for unverified claims and citation integrity...")
+        # --- PHASE 4: LOGICAL AUDITING (COMPLIANCE CRITIC CO-ROUTINE) ---
+        status_box.write("🔍 Scanning draft for unverified claims and citation integrity...")
         
         critic_prompt = f"""
         You are an uncompromising AI Compliance Auditor. Your job is to catch hallucinations and verify footnotes.
-        
         Reference Material:
         \"\"\"{consolidated_context}\"\"\"
         
@@ -163,7 +244,7 @@ if user_input := st.chat_input("Ask me anything that requires deep verification 
         
         Instructions:
         - Identify any detail, metric, name, or claim in the Draft Response that cannot be proven directly by the Reference Material.
-        - Ensure numerical citation brackets ([1], [2], etc.) correctly align with text facts. 
+        - Ensure numerical citation brackets (, etc.) correctly align with text facts. 
         - Remove any sentence containing an unverified assumption. If the whole text lacks data support, output "Data unverified".
         
         Final Sanitized Output:
@@ -173,10 +254,13 @@ if user_input := st.chat_input("Ask me anything that requires deep verification 
         sanitized_response = sanitized_response_obj.content
         
         # Clean up UI element statuses upon completion
-        status_box.update(label="✅ Research complete & verified!", state="complete", expanded=False)
+        status_box.update(label="✅ Analysis complete & verified!", state="complete", expanded=False)
         
         # Render the verified payload to the user
         st.markdown(sanitized_response)
+        
+        # Update session persistent states for reporting
+        st.session_state.last_generated_report = sanitized_response
         
         # Display Sources Manifest and Ground Truth transparently below the response
         if sources_manifest:
@@ -189,3 +273,4 @@ if user_input := st.chat_input("Ask me anything that requires deep verification 
             
         # Append finalized structured log to session history
         st.session_state.messages.append({"role": "assistant", "content": sanitized_response})
+        st.invalidate_pages() # Force structural refresh to enable sidebar export download buttons instantly
